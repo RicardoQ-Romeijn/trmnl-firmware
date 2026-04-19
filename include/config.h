@@ -136,6 +136,8 @@ enum WIFI_CONNECT_RETRY_TIME // Time to sleep before trying to connect to the Wi
 #define PIN_INTERRUPT 2         //with silkscreen "KEY1"
 #else
 #define PIN_INTERRUPT 5         //with silkscreen "KEY3"
+#define PIN_KEY1 2              //with silkscreen "KEY1" — previous playlist
+#define PIN_KEY2 3              //with silkscreen "KEY2" — next playlist
 #endif // !MINI_EPD
 #define PIN_VBAT_SWITCH 6       //load switch enable pin for battery voltage measurement
 #define VBAT_SWITCH_LEVEL HIGH  //load switch enable pin active level

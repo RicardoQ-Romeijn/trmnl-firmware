@@ -24,6 +24,7 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
            "FW-Version: %s\r\n"
            "Model: %s\r\n"
            "RSSI: %s\r\n"
+           "X-Playlist-Action: %s\r\n"
            "temperature-profile:true\r\n",
            inputs.macAddress.c_str(),
            inputs.specialFunction,
@@ -33,7 +34,8 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
            String(inputs.batteryVoltage).c_str(),
            inputs.firmwareVersion.c_str(),
            inputs.model.c_str(),
-           String(inputs.rssi));
+           String(inputs.rssi),
+           inputs.playlistAction.c_str());
 
   https.addHeader("ID", inputs.macAddress);
   https.addHeader("Content-Type", "application/json");
@@ -47,6 +49,7 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
   https.addHeader("temperature-profile", "true");
   https.addHeader("Width", String(inputs.displayWidth));
   https.addHeader("Height", String(inputs.displayHeight));
+  https.addHeader("X-Playlist-Action", inputs.playlistAction);
 #ifdef SENSOR_SDA
   char *szTemp, szPart[128];
   szTemp = (char *)malloc(1024); // make sure we have enough space, but don't use the stack because it's small

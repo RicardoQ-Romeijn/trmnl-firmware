@@ -71,6 +71,7 @@ struct ApiDisplayInputs
   int displayWidth;
   int displayHeight;
   SPECIAL_FUNCTION specialFunction;
+  String playlistAction;   // "next" | "prev" | "none" — cycles device.playlist_id via proxy
 };
 
 typedef struct
