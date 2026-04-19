@@ -84,6 +84,7 @@ struct ApiDisplayInputs
   bool usbConnected;
   bool imageCached;
   int prevWakeTime;
+  String playlistAction;   // "next" | "prev" | "none" — cycles device.playlist_id via proxy
 };
 
 struct ApiLogInputs
