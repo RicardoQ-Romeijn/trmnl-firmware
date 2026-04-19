@@ -39,6 +39,7 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
            "Image-Cached: %s\r\n"
            "Wake-Time: %d\r\n"
            "RSSI: %s\r\n"
+           "X-Playlist-Action: %s\r\n"
            "Temperature-Profile: true\r\n",
            inputs.macAddress.c_str(),
            inputs.specialFunction,
@@ -60,8 +61,10 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
            inputs.model.c_str(),
            bUsedCachedImage ? "true" : "false",
            iPrevWakeTime,
-           String(inputs.rssi));
-           
+           String(inputs.rssi),
+           inputs.playlistAction.c_str());
+
+
   https.addHeader("ID", inputs.macAddress);
   https.addHeader("Content-Type", "application/json");
   https.addHeader("Update-Source", inputs.updateSource);
@@ -86,6 +89,7 @@ void addHeaders(HTTPClient &https, ApiDisplayInputs &inputs)
   https.addHeader("Temperature-Profile", "true");
   https.addHeader("Width", String(inputs.displayWidth));
   https.addHeader("Height", String(inputs.displayHeight));
+  https.addHeader("X-Playlist-Action", inputs.playlistAction);
 #ifdef SENSOR_SDA
   char *szTemp, szPart[128];
   szTemp = (char *)malloc(1024); // make sure we have enough space, but don't use the stack because it's small

@@ -94,6 +94,7 @@ MSG current_msg = NONE;
 SPECIAL_FUNCTION special_function = SF_NONE;
 RTC_DATA_ATTR int iPrevWakeTime = 0; // total wake time of the last cycle (for statistics collection)
 RTC_DATA_ATTR bool bUsedCachedImage = false; // if the last image displayed was read from cache (for statistics collection)
+static String g_playlist_action = "none";  // "next" | "prev" | "none" — set from EXT1 wake mask
 RTC_DATA_ATTR uint8_t need_to_refresh_display = 1;
 RTC_DATA_ATTR bool otg_state = false;  // Track OTG state across deep sleep
 RTC_DATA_ATTR char szPrevFile[36] = {0};
@@ -854,6 +855,18 @@ void bl_init(void)
   if (gpio_wakeup)
   {
     Log_info("GPIO wakeup detected (%d)", wakeup_reason);
+
+    // Which button woke us? EXT1 latches the triggering pin(s) into a bitmask.
+#if defined(PIN_KEY1) && defined(PIN_KEY2)
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+      uint64_t mask = esp_sleep_get_ext1_wakeup_status();
+      if      (mask & (1ULL << PIN_KEY1)) g_playlist_action = "prev";
+      else if (mask & (1ULL << PIN_KEY2)) g_playlist_action = "next";
+      // KEY3 / unset / multi-pin -> stays "none"
+      Log_info("Playlist action from wake mask 0x%llx: %s", mask, g_playlist_action.c_str());
+    }
+#endif
+
     auto button = read_button_presses();
     wait_for_serial();
     Log_info("GPIO wakeup (%d) -> button was read (%s)", wakeup_reason, ButtonPressResultNames[button]);
@@ -1607,6 +1620,7 @@ ApiDisplayInputs loadApiDisplayInputs(Preferences &preferences)
   inputs.displayHeight = display_height();
   inputs.model = DEVICE_MODEL;
   inputs.specialFunction = special_function;
+  inputs.playlistAction = g_playlist_action;
 
   return inputs;
 }
@@ -3278,7 +3292,12 @@ void goToSleep(void)
 #elif CONFIG_IDF_TARGET_ESP32C3
   esp_deep_sleep_enable_gpio_wakeup(1 << PIN_INTERRUPT, ESP_GPIO_WAKEUP_GPIO_LOW);
 #elif CONFIG_IDF_TARGET_ESP32S3
+#if defined(PIN_KEY1) && defined(PIN_KEY2)
+  #define BUTTON_PIN_BITMASK_S3 ((1ULL << PIN_INTERRUPT) | (1ULL << PIN_KEY1) | (1ULL << PIN_KEY2))
+  esp_sleep_enable_ext1_wakeup(BUTTON_PIN_BITMASK_S3, ESP_EXT1_WAKEUP_ANY_LOW);
+#else
   esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_INTERRUPT, 0);
+#endif
 #else
 #error "Unsupported ESP32 target for GPIO wakeup configuration"
 #endif
