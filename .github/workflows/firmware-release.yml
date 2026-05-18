@@ -123,12 +123,3 @@ jobs:
             "dist/trmnl_${{ steps.ver.outputs.version }}.bin.sha256" \
             --title "Firmware ${{ steps.ver.outputs.version }}" \
             --notes "Custom playlist-cycling fork. Built from $(git rev-parse --short HEAD) on top of upstream ${{ steps.ver.outputs.upstream_tag }}."
-
-      - name: Notify ntfy on failure
-        if: failure()
-        run: |
-          curl -d "Build failed for $GITHUB_SHA on $GITHUB_REF_NAME. Check Actions log." \
-               -H "Title: TRMNL build failed" \
-               -H "Priority: high" \
-               -H "Tags: warning" \
-               https://ntfy.bamlab.nl/trmnl-firmware || true
