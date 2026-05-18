@@ -1,6 +1,6 @@
 name: Firmware release (custom fork)
 
-# Builds TRMNL_7inch5_OG_DIY_Kit firmware on every push to playlist-cycling,
+# Builds TRMNL_7inch5_OG_DIY_Kit firmware on every push to main,
 # tags the commit as v<major>.<minor>.<upstream_patch + commits_since_upstream_tag>,
 # creates a GitHub Release with firmware.bin + .sha256.
 # Refuses to run if HEAD is not rebased onto the latest upstream tag.
@@ -8,7 +8,7 @@ name: Firmware release (custom fork)
 
 on:
   push:
-    branches: [playlist-cycling]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -55,6 +55,7 @@ jobs:
             echo "HEAD is not a descendant of ${UPSTREAM_TAG}."
             echo "Rebase locally:"
             echo "  git fetch upstream --tags"
+            echo "  git checkout main"
             echo "  git rebase ${UPSTREAM_TAG}"
             echo "  git push --force-with-lease"
             echo "Or trigger the rebase-from-upstream workflow manually."
@@ -122,4 +123,4 @@ jobs:
             "dist/trmnl_${{ steps.ver.outputs.version }}.bin" \
             "dist/trmnl_${{ steps.ver.outputs.version }}.bin.sha256" \
             --title "Firmware ${{ steps.ver.outputs.version }}" \
-            --notes "Custom playlist-cycling fork. Built from $(git rev-parse --short HEAD) on top of upstream ${{ steps.ver.outputs.upstream_tag }}."
+            --notes "Custom fork build. Commit $(git rev-parse --short HEAD) on top of upstream ${{ steps.ver.outputs.upstream_tag }}."
