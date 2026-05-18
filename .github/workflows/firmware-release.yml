@@ -1,0 +1,134 @@
+name: Firmware release (custom fork)
+
+# Builds TRMNL_7inch5_OG_DIY_Kit firmware on every push to playlist-cycling,
+# tags the commit as v<major>.<minor>.<upstream_patch + commits_since_upstream_tag>,
+# creates a GitHub Release with firmware.bin + .sha256.
+# Refuses to run if HEAD is not rebased onto the latest upstream tag.
+# Skips silently if the computed tag already exists on origin.
+
+on:
+  push:
+    branches: [playlist-cycling]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute version
+        id: ver
+        run: |
+          UPSTREAM_TAG=$(git ls-remote --tags https://github.com/usetrmnl/trmnl-firmware.git 'refs/tags/v*' \
+            | awk -F'/' '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -z "$UPSTREAM_TAG" ]; then
+            echo "Could not find latest upstream tag" >&2
+            exit 1
+          fi
+          git fetch https://github.com/usetrmnl/trmnl-firmware.git "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}" --quiet
+          UPSTREAM_VERSION="${UPSTREAM_TAG#v}"
+          COMMITS=$(git rev-list --count "${UPSTREAM_TAG}..HEAD")
+          IFS=. read MAJ MIN PATCH <<< "$UPSTREAM_VERSION"
+          NEW_PATCH=$((PATCH + COMMITS))
+          VERSION="${MAJ}.${MIN}.${NEW_PATCH}"
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=${UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed: ${VERSION} (upstream ${UPSTREAM_TAG} + ${COMMITS} commits past it)"
+
+      - name: Refuse to build if not rebased onto latest upstream tag
+        run: |
+          UPSTREAM_TAG="${{ steps.ver.outputs.upstream_tag }}"
+          MERGE_BASE=$(git merge-base HEAD "refs/tags/${UPSTREAM_TAG}")
+          TAG_SHA=$(git rev-parse "refs/tags/${UPSTREAM_TAG}")
+          if [ "$MERGE_BASE" != "$TAG_SHA" ]; then
+            echo "HEAD is not a descendant of ${UPSTREAM_TAG}."
+            echo "Rebase locally:"
+            echo "  git fetch upstream --tags"
+            echo "  git rebase ${UPSTREAM_TAG}"
+            echo "  git push --force-with-lease"
+            echo "Or trigger the rebase-from-upstream workflow manually."
+            exit 1
+          fi
+
+      - name: Bail if tag already exists
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.ver.outputs.tag }}" | grep -q .; then
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists on origin. No new commits — nothing to release."
+            exit 78
+          fi
+
+      - name: Patch firmware version in include/config.h
+        run: |
+          IFS=. read MAJ MIN PATCH <<< "${{ steps.ver.outputs.version }}"
+          sed -i -E "s|^#define FW_MAJOR_VERSION .+|#define FW_MAJOR_VERSION ${MAJ}|" include/config.h
+          sed -i -E "s|^#define FW_MINOR_VERSION .+|#define FW_MINOR_VERSION ${MIN}|" include/config.h
+          sed -i -E "s|^#define FW_PATCH_VERSION .+|#define FW_PATCH_VERSION ${PATCH}|" include/config.h
+          echo "Patched:"
+          grep -E '^#define FW_(MAJOR|MINOR|PATCH)_VERSION ' include/config.h
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: ubuntu-pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: ubuntu-pio-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build TRMNL_7inch5_OG_DIY_Kit
+        run: pio run -e TRMNL_7inch5_OG_DIY_Kit -j 4
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          BIN=".pio/build/TRMNL_7inch5_OG_DIY_Kit/firmware.bin"
+          test -f "$BIN" || { echo "firmware.bin not found at $BIN"; exit 1; }
+          OUT_BIN="dist/trmnl_${{ steps.ver.outputs.version }}.bin"
+          cp "$BIN" "$OUT_BIN"
+          (cd dist && sha256sum "trmnl_${{ steps.ver.outputs.version }}.bin" > "trmnl_${{ steps.ver.outputs.version }}.bin.sha256")
+          ls -la dist/
+
+      - name: Tag commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.tag }}" -m "Build ${{ steps.ver.outputs.version }} (on top of upstream ${{ steps.ver.outputs.upstream_tag }})"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            "dist/trmnl_${{ steps.ver.outputs.version }}.bin" \
+            "dist/trmnl_${{ steps.ver.outputs.version }}.bin.sha256" \
+            --title "Firmware ${{ steps.ver.outputs.version }}" \
+            --notes "Custom playlist-cycling fork. Built from $(git rev-parse --short HEAD) on top of upstream ${{ steps.ver.outputs.upstream_tag }}."
+
+      - name: Notify ntfy on failure
+        if: failure()
+        run: |
+          curl -d "Build failed for $GITHUB_SHA on $GITHUB_REF_NAME. Check Actions log." \
+               -H "Title: TRMNL build failed" \
+               -H "Priority: high" \
+               -H "Tags: warning" \
+               https://ntfy.bamlab.nl/trmnl-firmware || true
