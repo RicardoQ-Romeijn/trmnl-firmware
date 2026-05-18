@@ -70,10 +70,6 @@ jobs:
         if: steps.check.outputs.rebase_needed == 'true' && steps.rebase.outcome == 'success'
         run: |
           git push origin playlist-cycling --force-with-lease
-          curl -d "Rebased onto ${{ steps.tag.outputs.latest }}. Build workflow should trigger now." \
-               -H "Title: TRMNL fork rebased" \
-               -H "Tags: tada" \
-               https://ntfy.bamlab.nl/trmnl-firmware || true
 
       - name: File issue on conflict
         if: steps.rebase.outcome == 'failure'
@@ -85,8 +81,3 @@ jobs:
           gh issue create \
             --title "Rebase against ${{ steps.tag.outputs.latest }} failed" \
             --body "$BODY"
-          curl -d "Rebase conflict against ${{ steps.tag.outputs.latest }}. Issue opened on the fork." \
-               -H "Title: TRMNL rebase conflict" \
-               -H "Priority: high" \
-               -H "Tags: warning" \
-               https://ntfy.bamlab.nl/trmnl-firmware || true
