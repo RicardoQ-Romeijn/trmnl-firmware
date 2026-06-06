@@ -38,7 +38,18 @@ jobs:
           UPSTREAM_VERSION="${UPSTREAM_TAG#v}"
           COMMITS=$(git rev-list --count "${UPSTREAM_TAG}..HEAD")
           IFS=. read MAJ MIN PATCH <<< "$UPSTREAM_VERSION"
-          NEW_PATCH=$((PATCH + COMMITS))
+          NATURAL_PATCH=$((PATCH + COMMITS))
+          # Monotonic guarantee: if a squash / history rewrite has lowered the
+          # commit count below a previously released patch on this MAJ.MIN line,
+          # bump past it so Terminus's "highest semver wins" picker still picks
+          # the new build.
+          HIGHEST_PATCH=$(git ls-remote --tags origin "refs/tags/v${MAJ}.${MIN}.*" 2>/dev/null \
+            | awk -F. '{print $NF}' | grep -E '^[0-9]+$' | sort -n | tail -1)
+          NEW_PATCH=$NATURAL_PATCH
+          if [ -n "$HIGHEST_PATCH" ] && [ "$NEW_PATCH" -le "$HIGHEST_PATCH" ]; then
+            NEW_PATCH=$((HIGHEST_PATCH + 1))
+            echo "Natural patch ${NATURAL_PATCH} <= highest existing ${HIGHEST_PATCH}; bumping to ${NEW_PATCH}"
+          fi
           VERSION="${MAJ}.${MIN}.${NEW_PATCH}"
           TAG="v${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
