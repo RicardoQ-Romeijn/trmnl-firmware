@@ -1,0 +1,83 @@
+name: Weekly rebase from upstream
+
+# Saturday 12:00 UTC = 14:00 Amsterdam in summer, 13:00 in winter.
+# Fetches latest upstream tag v*.*.* and rebases main onto it.
+# On success: force-with-lease push (triggers firmware-release.yml).
+# On conflict: opens a GitHub Issue with manual resolution steps.
+
+on:
+  schedule:
+    - cron: '0 12 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git + add upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/usetrmnl/trmnl-firmware.git
+          git fetch upstream --tags --quiet
+
+      - name: Find latest upstream tag
+        id: tag
+        run: |
+          LATEST=$(git ls-remote --tags upstream 'refs/tags/v*' \
+            | awk -F'/' '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "No upstream tags matching vX.Y.Z found" >&2
+            exit 1
+          fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream tag: $LATEST"
+
+      - name: Check if already on this base
+        id: check
+        run: |
+          TAG_SHA=$(git rev-parse "refs/tags/${{ steps.tag.outputs.latest }}")
+          MERGE_BASE=$(git merge-base HEAD "refs/tags/${{ steps.tag.outputs.latest }}")
+          if [ "$MERGE_BASE" = "$TAG_SHA" ]; then
+            echo "rebase_needed=false" >> "$GITHUB_OUTPUT"
+            echo "Already rebased on top of ${{ steps.tag.outputs.latest }} (sha $TAG_SHA). Nothing to do."
+          else
+            echo "rebase_needed=true" >> "$GITHUB_OUTPUT"
+            echo "Need to rebase. Current merge-base: $MERGE_BASE, tag sha: $TAG_SHA"
+          fi
+
+      - name: Rebase
+        if: steps.check.outputs.rebase_needed == 'true'
+        id: rebase
+        continue-on-error: true
+        run: |
+          git rebase "refs/tags/${{ steps.tag.outputs.latest }}"
+
+      - name: Push on success
+        if: steps.check.outputs.rebase_needed == 'true' && steps.rebase.outcome == 'success'
+        run: |
+          git push origin main --force-with-lease
+
+      - name: File issue on conflict
+        if: steps.rebase.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git rebase --abort 2>/dev/null || true
+          BODY=$'Weekly auto-rebase against upstream tag '${{ steps.tag.outputs.latest }}$' could not auto-resolve.\n\nResolve manually on your laptop:\n\n```bash\ncd C:\\\\Users\\\\ricar\\\\Projects\\\\trmnl-firmware-fork\ngit fetch upstream --tags\ngit checkout main\ngit rebase '${{ steps.tag.outputs.latest }}$'\n# resolve conflicts in Code Server / VS Code\ngit push --force-with-lease\n```\n\nThe firmware-release.yml workflow will pick up the push automatically.'
+          gh api -X POST repos/${{ github.repository }}/issues \
+            -f title="Rebase against ${{ steps.tag.outputs.latest }} failed" \
+            -f body="$BODY"
