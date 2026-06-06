@@ -78,6 +78,6 @@ jobs:
         run: |
           git rebase --abort 2>/dev/null || true
           BODY=$'Weekly auto-rebase against upstream tag '${{ steps.tag.outputs.latest }}$' could not auto-resolve.\n\nResolve manually on your laptop:\n\n```bash\ncd C:\\\\Users\\\\ricar\\\\Projects\\\\trmnl-firmware-fork\ngit fetch upstream --tags\ngit checkout main\ngit rebase '${{ steps.tag.outputs.latest }}$'\n# resolve conflicts in Code Server / VS Code\ngit push --force-with-lease\n```\n\nThe firmware-release.yml workflow will pick up the push automatically.'
-          gh issue create \
-            --title "Rebase against ${{ steps.tag.outputs.latest }} failed" \
-            --body "$BODY"
+          gh api -X POST repos/${{ github.repository }}/issues \
+            -f title="Rebase against ${{ steps.tag.outputs.latest }} failed" \
+            -f body="$BODY"
