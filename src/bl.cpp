@@ -24,6 +24,7 @@
 #include <filesystem.h>
 #include <stored_logs.h>
 #include <button.h>
+#include <button_handler.h>
 #include "api-client/submit_log.h"
 #include <api-client/setup.h>
 #include <special_function.h>
@@ -96,7 +97,6 @@ MSG current_msg = NONE;
 SPECIAL_FUNCTION special_function = SF_NONE;
 RTC_DATA_ATTR int iPrevWakeTime = 0; // total wake time of the last cycle (for statistics collection)
 RTC_DATA_ATTR bool bUsedCachedImage = false; // if the last image displayed was read from cache (for statistics collection)
-static String g_playlist_action = "none";  // "next" | "prev" | "none" — set from EXT1 wake mask
 RTC_DATA_ATTR uint8_t need_to_refresh_display = 1;
 RTC_DATA_ATTR bool otg_state = false;  // Track OTG state across deep sleep
 RTC_DATA_ATTR char szPrevFile[36] = {0};
@@ -861,32 +861,7 @@ void bl_init(void)
   {
     Log_info("GPIO wakeup detected (%d)", wakeup_reason);
 
-    // Which button woke us? EXT1 latches the triggering pin(s) into a bitmask.
-#if defined(PIN_KEY1) && defined(PIN_KEY2)
-    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
-      uint64_t mask = esp_sleep_get_ext1_wakeup_status();
-      if (mask & (1ULL << PIN_KEY1)) {
-        // KEY1: short press = prev, long press = next. Pin is pulled HIGH at
-        // idle and pressed = LOW. At wake time it's already LOW (the press is
-        // what woke us). Poll until release or the long-press threshold.
-        const uint32_t LONG_PRESS_MS = 600;
-        uint32_t start = millis();
-        while ((millis() - start) < LONG_PRESS_MS && digitalRead(PIN_KEY1) == LOW) {
-          delay(10);
-        }
-        bool long_press = (digitalRead(PIN_KEY1) == LOW);
-        g_playlist_action = long_press ? "next" : "prev";
-        Log_info("KEY1 %s press: action=%s",
-                 long_press ? "long" : "short",
-                 g_playlist_action.c_str());
-      }
-      // KEY2 still wakes the device but takes no playlist action — reserved
-      // for future custom configuration. KEY3 / multi-pin -> stays "none".
-      else {
-        Log_info("Wake mask 0x%llx not KEY1: no playlist action", mask);
-      }
-    }
-#endif
+    button_handler_on_wake(wakeup_reason);
 
     auto button = read_button_presses();
     wait_for_serial();
@@ -1623,7 +1598,7 @@ ApiDisplayInputs loadApiDisplayInputs(Preferences &preferences)
   inputs.specialFunction = special_function;
   inputs.imageCached = bUsedCachedImage;
   inputs.prevWakeTime = iPrevWakeTime;
-  inputs.playlistAction = g_playlist_action;
+  inputs.playlistAction = button_handler_get_playlist_action();
   inputs.usbConnected = false;
   
 #ifdef BOARD_TRMNL_X
@@ -3295,12 +3270,9 @@ void goToSleep(void)
   pinMode(PIN_INTERRUPT, INPUT); // needed to not immediately wake up
   esp_deep_sleep_enable_gpio_wakeup(1 << PIN_INTERRUPT, ESP_GPIO_WAKEUP_GPIO_LOW);
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-#if defined(PIN_KEY1) && defined(PIN_KEY2)
-  #define BUTTON_PIN_BITMASK_S3 ((1ULL << PIN_INTERRUPT) | (1ULL << PIN_KEY1) | (1ULL << PIN_KEY2))
-  esp_sleep_enable_ext1_wakeup(BUTTON_PIN_BITMASK_S3, ESP_EXT1_WAKEUP_ANY_LOW);
-#else
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_INTERRUPT, 0);
-#endif
+  esp_sleep_enable_ext1_wakeup(
+    button_handler_sleep_mask(1ULL << PIN_INTERRUPT),
+    ESP_EXT1_WAKEUP_ANY_LOW);
 #else
 #error "Unsupported ESP32 target for GPIO wakeup configuration"
 #endif
