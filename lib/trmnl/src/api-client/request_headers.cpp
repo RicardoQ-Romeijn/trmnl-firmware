@@ -32,6 +32,7 @@ HttpHeaderList buildDisplayHeaders(const ApiDisplayInputs &inputs)
   headers.push_back({"Temperature-Profile", "true"});
   headers.push_back({"Width", String(inputs.displayWidth)});
   headers.push_back({"Height", String(inputs.displayHeight)});
+  headers.push_back({"X-Playlist-Action", inputs.playlistAction});
 
   if (inputs.specialFunction != SF_NONE)
     headers.push_back({"special_function", "true"});
